@@ -432,7 +432,7 @@ export default function App() {
           <div>
             <h1 style={{ margin: 0, fontSize: 44, letterSpacing: "-0.03em" }}>TrueSight</h1>
             <div style={{ marginTop: 6, opacity: 0.75 }}>
-              Sprint 1 MVP • pHash-based Image Verification • <b>SQLite + History</b>
+              Sprint 2 MVP • Hybrid Image Verification • <b>pHash + CLIP + History</b>
             </div>
           </div>
 
