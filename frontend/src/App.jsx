@@ -3,20 +3,52 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 const API = "http://localhost:8000";
 
 function clamp01(x) {
-  if (Number.isNaN(x)) return 0;
-  return Math.max(0, Math.min(1, x));
+  const n = Number(x);
+  if (Number.isNaN(n)) return 0;
+  return Math.max(0, Math.min(1, n));
 }
 
 function pct(x) {
   return Math.round(clamp01(x) * 100);
 }
 
+function prettifyVerdict(verdict) {
+  const map = {
+    exact_match: "Exact Match",
+    near_duplicate: "Near Duplicate",
+    semantically_similar: "Semantically Similar",
+    different: "Different",
+    not_registered: "Not Registered",
+    likely_real: "Likely Real",
+    uncertain: "Uncertain",
+    likely_ai_or_manipulated: "Likely AI / Manipulated",
+    structural_match: "Structural Match",
+  };
+  return map[verdict] || verdict || "Unknown";
+}
+
 function badgeForTrust(trust, verdict) {
   const t = clamp01(trust);
 
+  if (verdict === "exact_match") {
+    return { label: "Exact Match", tone: "good" };
+  }
+  if (verdict === "near_duplicate") {
+    return { label: "Near Duplicate", tone: "good" };
+  }
+  if (verdict === "semantically_similar") {
+    return { label: "Semantically Similar", tone: "warn" };
+  }
+  if (verdict === "different") {
+    return { label: "Different", tone: "bad" };
+  }
   if (verdict === "not_registered") {
     return { label: "Not Registered", tone: "neutral" };
   }
+  if (verdict === "structural_match") {
+    return { label: "Structural Match", tone: "good" };
+  }
+
   if (t >= 0.9 || verdict === "likely_real") {
     return { label: "Likely Real", tone: "good" };
   }
@@ -31,23 +63,23 @@ function ToneBadge({ tone, children }) {
     good: {
       background: "rgba(16,185,129,0.12)",
       color: "#065f46",
-      border: "1px solid rgba(16,185,129,0.35)"
+      border: "1px solid rgba(16,185,129,0.35)",
     },
     warn: {
       background: "rgba(245,158,11,0.14)",
       color: "#7a4b00",
-      border: "1px solid rgba(245,158,11,0.35)"
+      border: "1px solid rgba(245,158,11,0.35)",
     },
     bad: {
       background: "rgba(239,68,68,0.12)",
       color: "#7f1d1d",
-      border: "1px solid rgba(239,68,68,0.32)"
+      border: "1px solid rgba(239,68,68,0.32)",
     },
     neutral: {
       background: "rgba(255,255,255,0.55)",
       color: "#111827",
-      border: "1px solid rgba(229,231,235,0.9)"
-    }
+      border: "1px solid rgba(229,231,235,0.9)",
+    },
   };
 
   const s = styles[tone] || styles.neutral;
@@ -64,7 +96,7 @@ function ToneBadge({ tone, children }) {
         fontSize: 13,
         fontWeight: 800,
         whiteSpace: "nowrap",
-        backdropFilter: "blur(8px)"
+        backdropFilter: "blur(8px)",
       }}
     >
       {children}
@@ -82,7 +114,7 @@ function ProgressRow({ label, value, sublabel }) {
           display: "flex",
           justifyContent: "space-between",
           fontSize: 13,
-          marginBottom: 6
+          marginBottom: 6,
         }}
       >
         <div style={{ fontWeight: 800 }}>{label}</div>
@@ -94,7 +126,7 @@ function ProgressRow({ label, value, sublabel }) {
           height: 10,
           background: "rgba(148,163,184,0.22)",
           borderRadius: 999,
-          overflow: "hidden"
+          overflow: "hidden",
         }}
       >
         <div
@@ -102,7 +134,7 @@ function ProgressRow({ label, value, sublabel }) {
             width: `${p}%`,
             height: "100%",
             background: "#111827",
-            transition: "width 450ms ease"
+            transition: "width 450ms ease",
           }}
         />
       </div>
@@ -123,20 +155,20 @@ function Toast({ toast, onClose }) {
   const toneStyles = {
     good: {
       border: "1px solid rgba(16,185,129,0.35)",
-      background: "rgba(255,255,255,0.9)"
+      background: "rgba(255,255,255,0.9)",
     },
     warn: {
       border: "1px solid rgba(245,158,11,0.35)",
-      background: "rgba(255,255,255,0.9)"
+      background: "rgba(255,255,255,0.9)",
     },
     bad: {
       border: "1px solid rgba(239,68,68,0.32)",
-      background: "rgba(255,255,255,0.9)"
+      background: "rgba(255,255,255,0.9)",
     },
     neutral: {
       border: "1px solid rgba(229,231,235,0.9)",
-      background: "rgba(255,255,255,0.9)"
-    }
+      background: "rgba(255,255,255,0.9)",
+    },
   };
 
   return (
@@ -150,7 +182,7 @@ function Toast({ toast, onClose }) {
         display: "flex",
         gap: 10,
         alignItems: "center",
-        animation: "toastIn 220ms ease both"
+        animation: "toastIn 220ms ease both",
       }}
     >
       <div style={{ fontWeight: 900, fontSize: 13 }}>{toast.title}</div>
@@ -163,7 +195,7 @@ function Toast({ toast, onClose }) {
           background: "transparent",
           cursor: "pointer",
           fontSize: 16,
-          opacity: 0.6
+          opacity: 0.6,
         }}
         aria-label="close toast"
       >
@@ -184,7 +216,7 @@ function CopyLine({ label, value, pushToast }) {
       pushToast({
         tone: "bad",
         title: "Copy failed",
-        msg: "Browser permission blocked it."
+        msg: "Browser permission blocked it.",
       });
     }
   }
@@ -201,7 +233,7 @@ function CopyLine({ label, value, pushToast }) {
           padding: "6px 8px",
           borderRadius: 10,
           overflowX: "auto",
-          backdropFilter: "blur(10px)"
+          backdropFilter: "blur(10px)",
         }}
       >
         {value || "-"}
@@ -215,11 +247,20 @@ function CopyLine({ label, value, pushToast }) {
           border: "1px solid rgba(229,231,235,0.9)",
           background: canCopy ? "rgba(255,255,255,0.9)" : "rgba(243,244,246,0.9)",
           cursor: canCopy ? "pointer" : "not-allowed",
-          fontWeight: 800
+          fontWeight: 800,
         }}
       >
         Copy
       </button>
+    </div>
+  );
+}
+
+function MetaLine({ label, value }) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+      <div style={{ width: 150, fontSize: 13, opacity: 0.75 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, wordBreak: "break-word" }}>{value || "-"}</div>
     </div>
   );
 }
@@ -250,7 +291,7 @@ export default function App() {
     try {
       const [aRes, rRes] = await Promise.all([
         fetch(`${API}/history/analyses?limit=50`),
-        fetch(`${API}/history/registrations?limit=50`)
+        fetch(`${API}/history/registrations?limit=50`),
       ]);
 
       const aJson = await aRes.json();
@@ -289,7 +330,7 @@ export default function App() {
           const blob = it.getAsFile();
           if (blob) {
             const pasted = new File([blob], `pasted-${Date.now()}.png`, {
-              type: blob.type
+              type: blob.type,
             });
             setPickedFile(pasted);
             pushToast({ tone: "good", title: "Pasted", msg: "Image from clipboard" });
@@ -312,17 +353,58 @@ export default function App() {
     if (!result) return null;
 
     const trust = result?.result?.trust ?? 0;
-    const verdict = result?.result?.verdict ?? "unknown";
-    const phSim = result?.best_match?.phash_similarity ?? 0;
+    const verdict = result?.result?.verdict ?? result?.verdict ?? "unknown";
+
+    const phSim =
+      result?.best_match?.phash_similarity ??
+      result?.best_match?.best_phash_sim ??
+      result?.best_phash_sim ??
+      0;
+
+    const clipSim =
+      result?.best_match?.clip_similarity ??
+      result?.best_match?.best_clip_sim ??
+      result?.best_clip_sim ??
+      0;
+
+    const hybridScore =
+      result?.best_match?.hybrid_score ??
+      result?.hybrid_score ??
+      trust ??
+      0;
+
+    const bestHybrid =
+      result?.best_match?.content_sha256 ||
+      result?.best_match?.hybrid_match_sha256 ||
+      result?.best_hybrid_sha ||
+      "";
+
+    const bestPhash =
+      result?.best_match?.phash_match_sha256 ||
+      result?.best_match?.best_phash_sha ||
+      result?.best_phash_sha ||
+      "";
+
+    const bestClip =
+      result?.best_match?.clip_match_sha256 ||
+      result?.best_match?.best_clip_sha ||
+      result?.best_clip_sha ||
+      "";
 
     return {
       trust: clamp01(trust),
       verdict,
       phSim: clamp01(phSim),
+      clipSim: clamp01(clipSim),
+      hybridScore: clamp01(hybridScore),
       sha: result?.content_sha256 || "",
       phash: result?.phash || "",
-      bestShaPhash: result?.best_match?.content_sha256 || "",
-      tags: result?.tags || []
+      embeddingBackend: result?.embedding_backend || "",
+      bestShaHybrid: bestHybrid,
+      bestShaPhash: bestPhash,
+      bestShaClip: bestClip,
+      tags: result?.tags || [],
+      note: result?.note || "",
     };
   }, [result]);
 
@@ -349,14 +431,14 @@ export default function App() {
         pushToast({
           tone: "bad",
           title: "Request failed",
-          msg: data?.detail || "Try again"
+          msg: data?.detail || "Try again",
         });
       } else {
         setResult(data);
         pushToast({
           tone: "good",
           title: path === "/register" ? "Registered" : "Analyzed",
-          msg: "Result updated"
+          msg: "Sprint 2 result updated",
         });
 
         if (historyOpen) {
@@ -369,7 +451,7 @@ export default function App() {
       pushToast({
         tone: "bad",
         title: "Network error",
-        msg: "Backend not reachable"
+        msg: "Backend not reachable",
       });
     } finally {
       setBusy(false);
@@ -406,13 +488,19 @@ export default function App() {
           "radial-gradient(1200px 600px at 10% 0%, rgba(59,130,246,0.22), transparent 60%)," +
           "radial-gradient(1000px 600px at 90% 10%, rgba(236,72,153,0.20), transparent 55%)," +
           "radial-gradient(1000px 700px at 50% 100%, rgba(34,197,94,0.18), transparent 60%)," +
-          "linear-gradient(180deg, #fbfbfc, #f3f5f9)"
+          "linear-gradient(180deg, #fbfbfc, #f3f5f9)",
       }}
     >
       <style>{`
         @keyframes toastIn {
           from { transform: translateY(-6px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
+        }
+
+        @media (max-width: 920px) {
+          .ts-grid {
+            grid-template-columns: 1fr !important;
+          }
         }
       `}</style>
 
@@ -426,7 +514,8 @@ export default function App() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-start",
-            gap: 16
+            gap: 16,
+            flexWrap: "wrap",
           }}
         >
           <div>
@@ -442,7 +531,7 @@ export default function App() {
               gap: 10,
               alignItems: "center",
               flexWrap: "wrap",
-              justifyContent: "flex-end"
+              justifyContent: "flex-end",
             }}
           >
             <ToneBadge tone={badge.tone}>{badge.label}</ToneBadge>
@@ -460,7 +549,7 @@ export default function App() {
                 padding: "7px 12px",
                 cursor: "pointer",
                 fontWeight: 900,
-                backdropFilter: "blur(10px)"
+                backdropFilter: "blur(10px)",
               }}
             >
               {historyOpen ? "Hide history" : "History"}
@@ -469,11 +558,12 @@ export default function App() {
         </div>
 
         <div
+          className="ts-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1.35fr",
             gap: 16,
-            marginTop: 18
+            marginTop: 18,
           }}
         >
           <div
@@ -483,7 +573,7 @@ export default function App() {
               borderRadius: 18,
               padding: 16,
               backdropFilter: "blur(14px)",
-              boxShadow: "0 20px 50px rgba(0,0,0,0.06)"
+              boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
             }}
           >
             <div style={{ fontWeight: 900, marginBottom: 10 }}>Upload</div>
@@ -503,7 +593,7 @@ export default function App() {
                   ? "rgba(241,245,255,0.75)"
                   : "rgba(247,248,251,0.7)",
                 cursor: "pointer",
-                transition: "all 150ms ease"
+                transition: "all 150ms ease",
               }}
             >
               <div
@@ -511,7 +601,8 @@ export default function App() {
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  gap: 12
+                  gap: 12,
+                  flexWrap: "wrap",
                 }}
               >
                 <div style={{ fontWeight: 900 }}>Drag & Drop</div>
@@ -540,7 +631,7 @@ export default function App() {
                       objectFit: "contain",
                       borderRadius: 14,
                       border: "1px solid rgba(238,242,247,0.9)",
-                      background: "rgba(255,255,255,0.9)"
+                      background: "rgba(255,255,255,0.9)",
                     }}
                   />
                 </div>
@@ -564,7 +655,7 @@ export default function App() {
                     ? "rgba(243,244,246,0.9)"
                     : "rgba(255,255,255,0.9)",
                   cursor: !file || busy ? "not-allowed" : "pointer",
-                  fontWeight: 900
+                  fontWeight: 900,
                 }}
               >
                 {busy ? "Working..." : "Register"}
@@ -581,7 +672,7 @@ export default function App() {
                   background: !file || busy ? "rgba(243,244,246,0.9)" : "#111827",
                   color: !file || busy ? "#6b7280" : "white",
                   cursor: !file || busy ? "not-allowed" : "pointer",
-                  fontWeight: 900
+                  fontWeight: 900,
                 }}
               >
                 {busy ? "Working..." : "Analyze"}
@@ -596,7 +687,7 @@ export default function App() {
                   borderRadius: 14,
                   border: "1px solid rgba(239,68,68,0.35)",
                   background: "rgba(255,236,236,0.8)",
-                  color: "#7f1d1d"
+                  color: "#7f1d1d",
                 }}
               >
                 <b>Error:</b> {error}
@@ -611,7 +702,7 @@ export default function App() {
               borderRadius: 18,
               padding: 16,
               backdropFilter: "blur(14px)",
-              boxShadow: "0 20px 50px rgba(0,0,0,0.06)"
+              boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
             }}
           >
             <div
@@ -619,13 +710,14 @@ export default function App() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                gap: 10
+                gap: 10,
+                flexWrap: "wrap",
               }}
             >
               <div style={{ fontWeight: 900 }}>Result</div>
               {metrics ? (
                 <ToneBadge tone={badge.tone}>
-                  Trust: {pct(metrics.trust)}% • {badge.label}
+                  Trust: {pct(metrics.trust)}% • {prettifyVerdict(metrics.verdict)}
                 </ToneBadge>
               ) : (
                 <ToneBadge tone="neutral">Waiting for output…</ToneBadge>
@@ -640,7 +732,7 @@ export default function App() {
                   borderRadius: 14,
                   background: "rgba(246,247,249,0.75)",
                   border: "1px dashed rgba(209,213,219,0.95)",
-                  opacity: 0.92
+                  opacity: 0.92,
                 }}
               >
                 Upload an image and run <b>Register</b> or <b>Analyze</b>.
@@ -650,23 +742,45 @@ export default function App() {
                 <ProgressRow
                   label="pHash similarity"
                   value={metrics.phSim}
-                  sublabel="Similarity based on perceptual hashing."
+                  sublabel="Structural similarity based on perceptual hashing."
                 />
+
+                <ProgressRow
+                  label="CLIP similarity"
+                  value={metrics.clipSim}
+                  sublabel="Semantic similarity based on CLIP image embeddings."
+                />
+
+                <ProgressRow
+                  label="Hybrid score"
+                  value={metrics.hybridScore}
+                  sublabel="Combined Sprint 2 score using pHash and CLIP."
+                />
+
                 <ProgressRow
                   label="Trust score"
                   value={metrics.trust}
-                  sublabel="Basic Sprint 1 trust result using pHash verification."
+                  sublabel="Final Sprint 2 verification confidence."
                 />
+
+                <div style={{ marginTop: 18, fontWeight: 900, marginBottom: 10 }}>
+                  Analysis Details
+                </div>
+
+                <MetaLine label="Verdict" value={prettifyVerdict(metrics.verdict)} />
+                <MetaLine label="Backend" value={metrics.embeddingBackend || "-"} />
+
+                {metrics.note ? <MetaLine label="Note" value={metrics.note} /> : null}
 
                 <div style={{ marginTop: 16, fontWeight: 900, marginBottom: 10 }}>
                   Tags
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-                  {(metrics.tags || []).map((tag) => {
+                  {(metrics.tags || []).map((tag, idx) => {
                     const b = badgeForTrust(metrics.trust, tag);
                     return (
-                      <ToneBadge key={tag} tone={b.tone}>
-                        {tag}
+                      <ToneBadge key={`${tag}-${idx}`} tone={b.tone}>
+                        {prettifyVerdict(tag)}
                       </ToneBadge>
                     );
                   })}
@@ -678,8 +792,18 @@ export default function App() {
                 <CopyLine label="Content SHA-256" value={metrics.sha} pushToast={pushToast} />
                 <CopyLine label="pHash" value={metrics.phash} pushToast={pushToast} />
                 <CopyLine
+                  label="Best match (Hybrid)"
+                  value={metrics.bestShaHybrid}
+                  pushToast={pushToast}
+                />
+                <CopyLine
                   label="Best match (pHash)"
                   value={metrics.bestShaPhash}
+                  pushToast={pushToast}
+                />
+                <CopyLine
+                  label="Best match (CLIP)"
+                  value={metrics.bestShaClip}
                   pushToast={pushToast}
                 />
               </div>
@@ -690,7 +814,7 @@ export default function App() {
                 style={{
                   marginTop: 18,
                   paddingTop: 14,
-                  borderTop: "1px solid rgba(229,231,235,0.9)"
+                  borderTop: "1px solid rgba(229,231,235,0.9)",
                 }}
               >
                 <div
@@ -698,7 +822,8 @@ export default function App() {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    gap: 10
+                    gap: 10,
+                    flexWrap: "wrap",
                   }}
                 >
                   <div style={{ fontWeight: 900 }}>History</div>
@@ -713,7 +838,7 @@ export default function App() {
                       padding: "6px 10px",
                       cursor: historyLoading ? "not-allowed" : "pointer",
                       fontWeight: 800,
-                      opacity: historyLoading ? 0.6 : 1
+                      opacity: historyLoading ? 0.6 : 1,
                     }}
                   >
                     {historyLoading ? "Refreshing..." : "Refresh"}
@@ -730,7 +855,7 @@ export default function App() {
                       borderRadius: 999,
                       padding: "7px 12px",
                       cursor: "pointer",
-                      fontWeight: 900
+                      fontWeight: 900,
                     }}
                   >
                     Analyses
@@ -740,12 +865,15 @@ export default function App() {
                     onClick={() => setHistoryTab("registrations")}
                     style={{
                       border: "1px solid rgba(229,231,235,0.9)",
-                      background: historyTab === "registrations" ? "#111827" : "rgba(255,255,255,0.85)",
+                      background:
+                        historyTab === "registrations"
+                          ? "#111827"
+                          : "rgba(255,255,255,0.85)",
                       color: historyTab === "registrations" ? "white" : "#111827",
                       borderRadius: 999,
                       padding: "7px 12px",
                       cursor: "pointer",
-                      fontWeight: 900
+                      fontWeight: 900,
                     }}
                   >
                     Registrations
@@ -764,7 +892,7 @@ export default function App() {
                             padding: 12,
                             borderRadius: 14,
                             border: "1px solid rgba(229,231,235,0.9)",
-                            background: "rgba(255,255,255,0.75)"
+                            background: "rgba(255,255,255,0.75)",
                           }}
                         >
                           <div
@@ -772,22 +900,46 @@ export default function App() {
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
-                              gap: 10
+                              gap: 10,
+                              flexWrap: "wrap",
                             }}
                           >
                             <div style={{ fontWeight: 900, fontSize: 13 }}>{x.created_at}</div>
                             <ToneBadge tone={b.tone}>
-                              {b.label} • {pct(x.trust)}%
+                              {prettifyVerdict(x.verdict)} • {pct(x.trust)}%
                             </ToneBadge>
                           </div>
 
-                          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-                            Verdict: <b>{x.verdict}</b>
+                          <div style={{ marginTop: 10 }}>
+                            <MetaLine label="Verdict" value={prettifyVerdict(x.verdict)} />
+                            <MetaLine
+                              label="pHash similarity"
+                              value={`${pct(x.best_phash_sim || 0)}%`}
+                            />
+                            <MetaLine
+                              label="CLIP similarity"
+                              value={`${pct(x.best_clip_sim || 0)}%`}
+                            />
+                            <MetaLine
+                              label="Hybrid score"
+                              value={`${pct(x.hybrid_score || 0)}%`}
+                            />
+                            <MetaLine label="Backend" value={x.embedding_backend || "-"} />
                           </div>
 
                           <div style={{ marginTop: 10 }}>
                             <CopyLine label="SHA-256" value={x.content_sha256} pushToast={pushToast} />
                             <CopyLine label="pHash" value={x.phash} pushToast={pushToast} />
+                            <CopyLine
+                              label="Best match (pHash)"
+                              value={x.best_phash_sha}
+                              pushToast={pushToast}
+                            />
+                            <CopyLine
+                              label="Best match (CLIP)"
+                              value={x.best_clip_sha}
+                              pushToast={pushToast}
+                            />
                           </div>
                         </div>
                       );
@@ -808,7 +960,7 @@ export default function App() {
                           padding: 12,
                           borderRadius: 14,
                           border: "1px solid rgba(229,231,235,0.9)",
-                          background: "rgba(255,255,255,0.75)"
+                          background: "rgba(255,255,255,0.75)",
                         }}
                       >
                         <div
@@ -816,15 +968,17 @@ export default function App() {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            gap: 10
+                            gap: 10,
+                            flexWrap: "wrap",
                           }}
                         >
                           <div style={{ fontWeight: 900, fontSize: 13 }}>{x.created_at}</div>
                           <ToneBadge tone="good">Registered</ToneBadge>
                         </div>
 
-                        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-                          Label: <b>{x.label || "-"}</b>
+                        <div style={{ marginTop: 10 }}>
+                          <MetaLine label="Label" value={x.label || "-"} />
+                          <MetaLine label="Backend" value={x.embedding_backend || "-"} />
                         </div>
 
                         <div style={{ marginTop: 10 }}>
