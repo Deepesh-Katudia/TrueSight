@@ -1,15 +1,33 @@
 import io
 import os
+import json
 import hashlib
 import sqlite3
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+# Optional ML imports for Sprint 2
+# If unavailable, the app falls back to a lightweight image embedding.
+try:
+    import torch
+except ImportError:
+    torch = None
+
+try:
+    import open_clip
+except ImportError:
+    open_clip = None
+
+try:
+    import clip as openai_clip
+except ImportError:
+    openai_clip = None
 
 
 # -----------------------------
@@ -34,9 +52,18 @@ os.makedirs(STORAGE_DIR, exist_ok=True)
 DB_PATH = os.path.join(STORAGE_DIR, "truesight.db")
 
 # -----------------------------
-# In-memory store
+# In-memory stores
 # -----------------------------
-PHASH_STORE: Dict[str, str] = {}  # sha256 -> phash hex
+PHASH_STORE: Dict[str, str] = {}          # sha256 -> phash hex
+EMBEDDING_STORE: Dict[str, List[float]] = {}  # sha256 -> normalized embedding vector
+
+# -----------------------------
+# CLIP / Embedding backend cache
+# -----------------------------
+CLIP_BACKEND = None
+CLIP_MODEL = None
+CLIP_PREPROCESS = None
+CLIP_DEVICE = "cpu"
 
 
 # -----------------------------
@@ -62,6 +89,20 @@ def load_image_or_400(data: bytes) -> Image.Image:
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read image: {e}")
+
+
+def json_dumps_vector(v: List[float]) -> str:
+    return json.dumps([float(x) for x in v])
+
+
+def json_loads_vector(s: Optional[str]) -> List[float]:
+    if not s:
+        return []
+    try:
+        data = json.loads(s)
+        return [float(x) for x in data]
+    except Exception:
+        return []
 
 
 # -----------------------------
@@ -96,15 +137,154 @@ def phash_similarity(h1: str, h2: str) -> float:
     return same / len(b1)
 
 
-def determine_verdict_and_trust(best_similarity: float, has_registrations: bool) -> tuple[str, float]:
-    if not has_registrations or best_similarity <= 0.0:
+# -----------------------------
+# CLIP / Embedding Support
+# -----------------------------
+def load_clip_backend() -> str:
+    """
+    Tries to load a real CLIP backend.
+    Falls back to a lightweight embedding if CLIP libs are unavailable.
+    """
+    global CLIP_BACKEND, CLIP_MODEL, CLIP_PREPROCESS, CLIP_DEVICE
+
+    if CLIP_BACKEND is not None:
+        return CLIP_BACKEND
+
+    if torch is not None and torch.cuda.is_available():
+        CLIP_DEVICE = "cuda"
+    else:
+        CLIP_DEVICE = "cpu"
+
+    try:
+        if open_clip is not None and torch is not None:
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                "ViT-B-32",
+                pretrained="openai"
+            )
+            model.eval()
+            model.to(CLIP_DEVICE)
+
+            CLIP_MODEL = model
+            CLIP_PREPROCESS = preprocess
+            CLIP_BACKEND = "open_clip_vit_b_32"
+            return CLIP_BACKEND
+    except Exception:
+        pass
+
+    try:
+        if openai_clip is not None and torch is not None:
+            model, preprocess = openai_clip.load("ViT-B/32", device=CLIP_DEVICE)
+            model.eval()
+
+            CLIP_MODEL = model
+            CLIP_PREPROCESS = preprocess
+            CLIP_BACKEND = "openai_clip_vit_b_32"
+            return CLIP_BACKEND
+    except Exception:
+        pass
+
+    CLIP_BACKEND = "fallback_rgb_embedding"
+    return CLIP_BACKEND
+
+
+def normalize_vector(v: np.ndarray) -> np.ndarray:
+    v = np.asarray(v, dtype=np.float32).flatten()
+    norm = np.linalg.norm(v)
+    if norm == 0:
+        return v
+    return v / norm
+
+
+def compute_fallback_embedding(img: Image.Image) -> List[float]:
+    """
+    Lightweight fallback embedding when CLIP is unavailable.
+    Not semantically as strong as CLIP, but keeps the pipeline functional.
+    """
+    small = img.resize((32, 32))
+    arr = np.asarray(small, dtype=np.float32) / 255.0
+    vec = arr.flatten()
+    vec = normalize_vector(vec)
+    return vec.astype(np.float32).tolist()
+
+
+def compute_clip_embedding(img: Image.Image) -> Tuple[List[float], str]:
+    backend = load_clip_backend()
+
+    if backend == "fallback_rgb_embedding":
+        return compute_fallback_embedding(img), backend
+
+    if torch is None or CLIP_MODEL is None or CLIP_PREPROCESS is None:
+        return compute_fallback_embedding(img), "fallback_rgb_embedding"
+
+    try:
+        input_tensor = CLIP_PREPROCESS(img).unsqueeze(0).to(CLIP_DEVICE)
+        with torch.no_grad():
+            features = CLIP_MODEL.encode_image(input_tensor)
+            features = features / features.norm(dim=-1, keepdim=True)
+            vec = features[0].detach().cpu().numpy().astype(np.float32).tolist()
+        return vec, backend
+    except Exception:
+        return compute_fallback_embedding(img), "fallback_rgb_embedding"
+
+
+def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+    if not v1 or not v2:
+        return 0.0
+
+    a = np.asarray(v1, dtype=np.float32)
+    b = np.asarray(v2, dtype=np.float32)
+
+    if a.shape != b.shape:
+        return 0.0
+
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    if denom == 0.0:
+        return 0.0
+
+    sim = float(np.dot(a, b) / denom)
+    return max(0.0, min(1.0, (sim + 1.0) / 2.0 if sim < 0 else sim))
+
+
+# -----------------------------
+# Sprint 2 Scoring / Classification
+# -----------------------------
+def compute_hybrid_score(phash_sim: float, clip_sim: float) -> float:
+    # Sprint 2 hybrid scoring
+    # Higher weight on CLIP for semantic similarity, while preserving pHash signal
+    score = (0.45 * clip_sim) + (0.55 * phash_sim)
+    return round(float(score), 4)
+
+
+def determine_verdict_and_trust(
+    best_phash_sim: float,
+    best_clip_sim: float,
+    hybrid_score: float,
+    has_registrations: bool
+) -> Tuple[str, float]:
+    if not has_registrations:
         return "not_registered", 0.10
 
-    if best_similarity >= 0.90:
-        return "likely_real", 0.90
-    if best_similarity >= 0.75:
-        return "uncertain", 0.60
-    return "likely_ai_or_manipulated", 0.30
+    if best_phash_sim >= 0.98 and best_clip_sim >= 0.98:
+        return "exact_match", 0.98
+
+    if hybrid_score >= 0.88 or best_phash_sim >= 0.90:
+        return "near_duplicate", max(0.88, hybrid_score)
+
+    if best_clip_sim >= 0.85:
+        return "semantically_similar", max(0.75, hybrid_score)
+
+    return "different", max(0.20, hybrid_score)
+
+
+def build_tags(verdict: str) -> List[str]:
+    mapping = {
+        "exact_match": ["exact_match", "verified"],
+        "near_duplicate": ["near_duplicate", "structural_match"],
+        "semantically_similar": ["semantically_similar", "semantic_match"],
+        "different": ["different"],
+        "not_registered": ["not_registered"],
+    }
+    return mapping.get(verdict, [verdict])
 
 
 # -----------------------------
@@ -114,6 +294,14 @@ def db() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     return con
+
+
+def ensure_column(con: sqlite3.Connection, table: str, column_name: str, column_def: str) -> None:
+    cur = con.cursor()
+    cur.execute(f"PRAGMA table_info({table})")
+    existing_cols = [row["name"] for row in cur.fetchall()]
+    if column_name not in existing_cols:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column_name} {column_def}")
 
 
 def init_db():
@@ -142,19 +330,40 @@ def init_db():
     )
     """)
 
+    # Sprint 2 schema upgrades
+    ensure_column(con, "registrations", "clip_embedding", "TEXT")
+    ensure_column(con, "registrations", "embedding_backend", "TEXT")
+
+    ensure_column(con, "analyses", "clip_embedding", "TEXT")
+    ensure_column(con, "analyses", "best_clip_sha", "TEXT")
+    ensure_column(con, "analyses", "best_clip_sim", "REAL")
+    ensure_column(con, "analyses", "hybrid_score", "REAL")
+    ensure_column(con, "analyses", "embedding_backend", "TEXT")
+
     con.commit()
     con.close()
 
 
 def load_from_db_into_memory():
     PHASH_STORE.clear()
+    EMBEDDING_STORE.clear()
 
     con = db()
     cur = con.cursor()
 
-    cur.execute("SELECT content_sha256, phash FROM registrations ORDER BY created_at ASC")
+    cur.execute("""
+        SELECT content_sha256, phash, clip_embedding
+        FROM registrations
+        ORDER BY created_at ASC
+    """)
+
     for row in cur.fetchall():
-        PHASH_STORE[row["content_sha256"]] = row["phash"]
+        sha = row["content_sha256"]
+        PHASH_STORE[sha] = row["phash"]
+
+        emb = json_loads_vector(row["clip_embedding"])
+        if emb:
+            EMBEDDING_STORE[sha] = emb
 
     con.close()
 
@@ -163,6 +372,7 @@ def load_from_db_into_memory():
 def on_startup():
     init_db()
     load_from_db_into_memory()
+    load_clip_backend()
 
 
 # -----------------------------
@@ -173,7 +383,8 @@ def root():
     return {
         "name": "TrueSight API",
         "status": "running",
-        "version": "Sprint 1",
+        "version": "Sprint 2",
+        "embedding_backend": load_clip_backend(),
         "routes": [
             "/health",
             "/docs",
@@ -189,7 +400,8 @@ def root():
 def health():
     return {
         "status": "ok",
-        "version": "Sprint 1",
+        "version": "Sprint 2",
+        "embedding_backend": load_clip_backend(),
         "registrations": len(PHASH_STORE),
     }
 
@@ -202,7 +414,9 @@ async def register_image(file: UploadFile = File(...), label: Optional[str] = No
 
     content_sha = sha256_bytes(data)
     img = load_image_or_400(data)
+
     ph = compute_phash(img)
+    embedding, backend = compute_clip_embedding(img)
 
     con = db()
     cur = con.cursor()
@@ -216,11 +430,23 @@ async def register_image(file: UploadFile = File(...), label: Optional[str] = No
     if not exists:
         created_at = now_iso()
         cur.execute(
-            "INSERT INTO registrations (content_sha256, phash, label, created_at) VALUES (?,?,?,?)",
-            (content_sha, ph, label, created_at)
+            """
+            INSERT INTO registrations
+            (content_sha256, phash, label, created_at, clip_embedding, embedding_backend)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                content_sha,
+                ph,
+                label,
+                created_at,
+                json_dumps_vector(embedding),
+                backend,
+            )
         )
         con.commit()
         PHASH_STORE[content_sha] = ph
+        EMBEDDING_STORE[content_sha] = embedding
 
     con.close()
 
@@ -228,8 +454,10 @@ async def register_image(file: UploadFile = File(...), label: Optional[str] = No
         "content_sha256": content_sha,
         "phash": ph,
         "label": label,
+        "embedding_backend": backend,
+        "embedding_dimensions": len(embedding),
         "status": "registered" if not exists else "already_registered",
-        "note": "Image registration stored successfully for Sprint 1.",
+        "note": "Image registration stored successfully for Sprint 2 with pHash and CLIP embedding support.",
     }
 
 
@@ -241,34 +469,79 @@ async def analyze_image(file: UploadFile = File(...)):
 
     content_sha = sha256_bytes(data)
     img = load_image_or_400(data)
+
     ph = compute_phash(img)
+    embedding, backend = compute_clip_embedding(img)
 
     best_phash_sha = None
     best_phash_sim = 0.0
 
-    for sha, saved_phash in PHASH_STORE.items():
-        sim = phash_similarity(ph, saved_phash)
-        if sim > best_phash_sim:
-            best_phash_sim = sim
+    best_clip_sha = None
+    best_clip_sim = 0.0
+
+    best_hybrid_sha = None
+    best_hybrid_score = 0.0
+
+    for sha in PHASH_STORE.keys():
+        saved_phash = PHASH_STORE.get(sha)
+        saved_embedding = EMBEDDING_STORE.get(sha, [])
+
+        p_sim = phash_similarity(ph, saved_phash)
+        c_sim = cosine_similarity(embedding, saved_embedding)
+        h_sim = compute_hybrid_score(p_sim, c_sim)
+
+        if p_sim > best_phash_sim:
+            best_phash_sim = p_sim
             best_phash_sha = sha
 
-    verdict, trust = determine_verdict_and_trust(best_phash_sim, len(PHASH_STORE) > 0)
+        if c_sim > best_clip_sim:
+            best_clip_sim = c_sim
+            best_clip_sha = sha
+
+        if h_sim > best_hybrid_score:
+            best_hybrid_score = h_sim
+            best_hybrid_sha = sha
+
+    verdict, trust = determine_verdict_and_trust(
+        best_phash_sim=best_phash_sim,
+        best_clip_sim=best_clip_sim,
+        hybrid_score=best_hybrid_score,
+        has_registrations=len(PHASH_STORE) > 0
+    )
 
     con = db()
     cur = con.cursor()
     cur.execute(
         """
         INSERT INTO analyses
-        (content_sha256, phash, verdict, trust, best_phash_sha, best_phash_sim, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (
+            content_sha256,
+            phash,
+            clip_embedding,
+            verdict,
+            trust,
+            best_phash_sha,
+            best_phash_sim,
+            best_clip_sha,
+            best_clip_sim,
+            hybrid_score,
+            embedding_backend,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             content_sha,
             ph,
+            json_dumps_vector(embedding),
             verdict,
             float(trust),
             best_phash_sha,
             float(best_phash_sim),
+            best_clip_sha,
+            float(best_clip_sim),
+            float(best_hybrid_score),
+            backend,
             now_iso(),
         )
     )
@@ -278,16 +551,21 @@ async def analyze_image(file: UploadFile = File(...)):
     return {
         "content_sha256": content_sha,
         "phash": ph,
+        "embedding_backend": backend,
         "best_match": {
-            "content_sha256": best_phash_sha,
-            "phash_similarity": float(best_phash_sim),
+            "content_sha256": best_hybrid_sha,
+            "phash_match_sha256": best_phash_sha,
+            "clip_match_sha256": best_clip_sha,
+            "phash_similarity": float(round(best_phash_sim, 4)),
+            "clip_similarity": float(round(best_clip_sim, 4)),
+            "hybrid_score": float(round(best_hybrid_score, 4)),
         },
         "result": {
-            "trust": float(trust),
+            "trust": float(round(trust, 4)),
             "verdict": verdict,
         },
-        "tags": [verdict],
-        "note": "Sprint 1 analysis uses pHash-based verification only.",
+        "tags": build_tags(verdict),
+        "note": "Sprint 2 analysis uses hybrid verification with pHash and CLIP-based semantic similarity.",
     }
 
 
@@ -299,7 +577,7 @@ def history_registrations(limit: int = 50):
     cur = con.cursor()
     cur.execute(
         """
-        SELECT content_sha256, phash, label, created_at
+        SELECT content_sha256, phash, label, embedding_backend, created_at
         FROM registrations
         ORDER BY created_at DESC
         LIMIT ?
@@ -320,8 +598,19 @@ def history_analyses(limit: int = 50):
     cur = con.cursor()
     cur.execute(
         """
-        SELECT id, content_sha256, phash, verdict, trust,
-               best_phash_sha, best_phash_sim, created_at
+        SELECT
+            id,
+            content_sha256,
+            phash,
+            verdict,
+            trust,
+            best_phash_sha,
+            best_phash_sim,
+            best_clip_sha,
+            best_clip_sim,
+            hybrid_score,
+            embedding_backend,
+            created_at
         FROM analyses
         ORDER BY created_at DESC
         LIMIT ?
