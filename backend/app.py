@@ -72,6 +72,7 @@ CLIP_BACKEND = None
 CLIP_MODEL = None
 CLIP_PREPROCESS = None
 CLIP_DEVICE = "cpu"
+EMBEDDING_BACKEND_MODE = os.getenv("TRUESIGHT_EMBEDDING_BACKEND", "auto").strip().lower()
 
 
 # -----------------------------
@@ -158,6 +159,10 @@ def load_clip_backend() -> str:
     if CLIP_BACKEND is not None:
         return CLIP_BACKEND
 
+    if EMBEDDING_BACKEND_MODE in {"fallback", "fallback_rgb_embedding", "rgb"}:
+        CLIP_BACKEND = "fallback_rgb_embedding"
+        return CLIP_BACKEND
+
     if torch is not None and torch.cuda.is_available():
         CLIP_DEVICE = "cuda"
     else:
@@ -193,6 +198,12 @@ def load_clip_backend() -> str:
 
     CLIP_BACKEND = "fallback_rgb_embedding"
     return CLIP_BACKEND
+
+
+def current_embedding_backend_name() -> str:
+    if EMBEDDING_BACKEND_MODE in {"fallback", "fallback_rgb_embedding", "rgb"}:
+        return "fallback_rgb_embedding"
+    return CLIP_BACKEND or "not_loaded"
 
 
 def normalize_vector(v: np.ndarray) -> np.ndarray:
@@ -383,7 +394,6 @@ def load_from_db_into_memory():
 def on_startup():
     init_db()
     load_from_db_into_memory()
-    load_clip_backend()
 
 
 # -----------------------------
@@ -395,7 +405,7 @@ def root():
         "name": "TrueSight API",
         "status": "running",
         "version": "Sprint 3",
-        "embedding_backend": load_clip_backend(),
+        "embedding_backend": current_embedding_backend_name(),
         "routes": [
             "/health",
             "/docs",
@@ -412,7 +422,7 @@ def health():
     return {
         "status": "ok",
         "version": "Sprint 3",
-        "embedding_backend": load_clip_backend(),
+        "embedding_backend": current_embedding_backend_name(),
         "registrations": len(PHASH_STORE),
     }
 

@@ -4,12 +4,14 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements-render.txt
     startCommand: python -m uvicorn app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: TRUESIGHT_EMBEDDING_BACKEND
+        value: fallback
       - key: FRONTEND_ORIGINS
         value: https://frontend-lac-eight-77.vercel.app,https://frontend-codewithdeepesh29s-projects.vercel.app,https://frontend-codewithdeepesh29-codewithdeepesh29s-projects.vercel.app

@@ -207,7 +207,7 @@ The root [`render.yaml`](./render.yaml) defines the backend as a Render Blueprin
 | Runtime | Python |
 | Plan | Free |
 | Root Directory | `backend` |
-| Build Command | `pip install --upgrade pip && pip install -r requirements.txt` |
+| Build Command | `pip install --upgrade pip && pip install -r requirements-render.txt` |
 | Start Command | `python -m uvicorn app:app --host 0.0.0.0 --port $PORT` |
 | Health Check | `/health` |
 | Auto Deploy | Every commit to the connected branch |
@@ -227,7 +227,8 @@ Render Free Web Service notes:
 - Free services spin down after idle time, so the first request after inactivity can be slow.
 - Free services use ephemeral disk. Uploaded files and the SQLite database can be lost on restart, redeploy, or spin-down.
 - For durable demo data, upgrade the backend to a paid Render instance with a persistent disk, or migrate storage to Postgres/object storage.
-- The first CLIP-backed request may be slow because OpenCLIP weights are loaded on cold start. If OpenCLIP cannot initialize, the backend falls back to the lightweight RGB embedding path and reports that in `embedding_backend`.
+- Render Free has a 512 MiB memory cap, so the Blueprint sets `TRUESIGHT_EMBEDDING_BACKEND=fallback` and installs `requirements-render.txt` without PyTorch/OpenCLIP.
+- The deployed free backend uses pHash plus the lightweight RGB embedding fallback. For full OpenCLIP scoring, use a larger paid backend instance and switch the build command back to `requirements.txt`.
 
 ### Legacy Setup Notes
 
@@ -279,6 +280,7 @@ Fly.io and Railway also work; the build/start commands above are portable.
 |-------|------|---------|
 | Frontend | `VITE_API_URL` | Base URL of the backend API (build-time) |
 | Backend  | `FRONTEND_ORIGINS` | Extra CORS origins, comma-separated |
+| Backend  | `TRUESIGHT_EMBEDDING_BACKEND` | Set to `fallback` on Render Free to avoid loading OpenCLIP |
 
 Current backend CORS origins in `render.yaml`:
 
