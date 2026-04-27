@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-# Optional ML imports for Sprint 2
+# Optional ML imports for Sprint 3 hybrid scoring (pHash + CLIP).
 # If unavailable, the app falls back to a lightweight image embedding.
 try:
     import torch
@@ -35,9 +35,17 @@ except ImportError:
 # -----------------------------
 app = FastAPI()
 
+DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+extra_origins_env = os.getenv("FRONTEND_ORIGINS", "")
+extra_origins = [o.strip() for o in extra_origins_env.split(",") if o.strip()]
+ALLOW_ORIGINS = DEFAULT_ORIGINS + extra_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=ALLOW_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -246,12 +254,15 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 
 
 # -----------------------------
-# Sprint 2 Scoring / Classification
+# Sprint 3 Scoring / Classification
 # -----------------------------
+PHASH_WEIGHT = 0.55
+CLIP_WEIGHT = 0.45
+
+
 def compute_hybrid_score(phash_sim: float, clip_sim: float) -> float:
-    # Sprint 2 hybrid scoring
-    # Higher weight on CLIP for semantic similarity, while preserving pHash signal
-    score = (0.45 * clip_sim) + (0.55 * phash_sim)
+    # Sprint 3 hybrid score: weighted blend of structural (pHash) and semantic (CLIP) similarity.
+    score = (PHASH_WEIGHT * phash_sim) + (CLIP_WEIGHT * clip_sim)
     return round(float(score), 4)
 
 
@@ -383,7 +394,7 @@ def root():
     return {
         "name": "TrueSight API",
         "status": "running",
-        "version": "Sprint 2",
+        "version": "Sprint 3",
         "embedding_backend": load_clip_backend(),
         "routes": [
             "/health",
@@ -400,7 +411,7 @@ def root():
 def health():
     return {
         "status": "ok",
-        "version": "Sprint 2",
+        "version": "Sprint 3",
         "embedding_backend": load_clip_backend(),
         "registrations": len(PHASH_STORE),
     }
@@ -457,7 +468,7 @@ async def register_image(file: UploadFile = File(...), label: Optional[str] = No
         "embedding_backend": backend,
         "embedding_dimensions": len(embedding),
         "status": "registered" if not exists else "already_registered",
-        "note": "Image registration stored successfully for Sprint 2 with pHash and CLIP embedding support.",
+        "note": "Sprint 3 registration stored with pHash fingerprint and CLIP embedding.",
     }
 
 
@@ -565,7 +576,7 @@ async def analyze_image(file: UploadFile = File(...)):
             "verdict": verdict,
         },
         "tags": build_tags(verdict),
-        "note": "Sprint 2 analysis uses hybrid verification with pHash and CLIP-based semantic similarity.",
+        "note": "Sprint 3 hybrid verification: 0.55 * pHash + 0.45 * CLIP similarity.",
     }
 
 
