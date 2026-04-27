@@ -35,7 +35,7 @@ truesight-main/
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.js
-├── vercel.json               Vercel build config (frontend only)
+├── frontend/vercel.json      Vercel build config (frontend only)
 ├── .gitignore
 └── README.md
 ```
@@ -170,16 +170,19 @@ Run through this checklist before demoing:
 
 ### Frontend on Vercel
 
-The repo includes a `vercel.json` at the project root that points Vercel at the `frontend/` workspace.
+Only the `frontend/` workspace deploys to Vercel. The backend will not work on Vercel — see the next section.
 
 1. Push this repo to GitHub.
 2. On https://vercel.com → **Add New Project** → import the GitHub repo.
-3. Leave the framework preset on **Other** (the `vercel.json` controls the build).
-4. In **Environment Variables**, add:
+3. **Set Root Directory to `frontend`** (this is the most important step — Vercel's project wizard lets you pick a subdirectory; pick `frontend`).
+4. Vercel will auto-detect **Vite** as the framework. Leave the build/output commands at their defaults.
+5. In **Environment Variables**, add:
    - `VITE_API_URL` = the public URL of your deployed backend (see below).
-5. Click **Deploy**. Vercel will run `npm --prefix frontend install && npm --prefix frontend run build` and serve `frontend/dist`.
+6. Click **Deploy**.
 
-Subsequent pushes to `main` redeploy automatically.
+Subsequent pushes to `main` redeploy automatically. The `frontend/vercel.json` adds a SPA-style rewrite so client-side routes don't 404 on refresh.
+
+> **Common mistake:** Do not set Root Directory to `backend`. The backend cannot run on Vercel; deploying it there fails with `ENOENT … backend/frontend/package.json` or similar errors. If you already created a misconfigured Vercel project, open **Project → Settings → General → Root Directory**, change it to `frontend`, and redeploy.
 
 ### Backend — *not* on Vercel
 
