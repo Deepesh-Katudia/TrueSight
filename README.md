@@ -1,299 +1,223 @@
-# TrueSight - Sprint 1 MVP
+# TrueSight — Sprint 3 (Final Sprint)
 
-TrueSight is an image verification application designed to help users check whether an uploaded image matches a previously registered image.  
-This Sprint 1 MVP focuses on **pHash-based image verification**, **basic trust results**, **tags**, **history tracking**, and **SQLite storage**.
+**AI-powered hybrid image verification.** TrueSight checks whether an uploaded image matches a previously registered image using a hybrid of perceptual hashing and CLIP neural embeddings.
 
-## Sprint 1 Scope
+This Sprint 3 build is the final capstone deliverable. It packages the work of Sprints 1 and 2 into a polished, demo-ready, deploy-ready system.
 
-The Sprint 1 version includes the core usable workflow of the application:
+---
 
-- Upload an image
-- Register an image for future reference
-- Analyze an image using **perceptual hashing (pHash)**
-- View a **basic trust result**
-- View **verification tags**
-- View **SHA-256** and **pHash identifiers**
-- Access **registration and analysis history**
-- Store data in **SQLite**
+## What's New in Sprint 3
 
-This version does **not** include CLIP-based similarity, provenance ledger scoring, or advanced forensic export features.
+- **Hybrid scoring model finalized:**
+  `hybrid_score = 0.55 × pHash similarity + 0.45 × CLIP similarity`
+- **Verdict surface fully wired** through the API and UI:
+  `Exact Match` · `Near Duplicate` · `Semantically Similar` · `Different` · `Not Registered`
+- **Frontend** updated to show pHash similarity, CLIP similarity, hybrid score, trust score, verdict, best match, and tags side-by-side, with proper loading, empty, and error states.
+- **Vercel deployment ready** for the frontend, with `VITE_API_URL` env-var support so the deployed UI can talk to a backend hosted anywhere.
+- **Configurable CORS** on the backend via the `FRONTEND_ORIGINS` env var.
+
+---
+
+## Architecture
+
+```
+truesight-main/
+├── backend/                  FastAPI + SQLite + pHash + CLIP
+│   ├── app.py
+│   ├── ledger.py             (cryptographic ledger helper, available for future use)
+│   ├── requirements.txt
+│   └── storage/              SQLite DB + uploaded images (gitignored)
+├── frontend/                 React + Vite SPA
+│   ├── src/
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── .env.example
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+├── vercel.json               Vercel build config (frontend only)
+├── .gitignore
+└── README.md
+```
+
+The backend is intentionally split from the frontend so each can be deployed independently. The frontend reads its API base URL from `VITE_API_URL` at build time.
 
 ---
 
 ## Tech Stack
 
-### Frontend
-- React
-- Vite
-- JavaScript
-
-### Backend
-- FastAPI
-- Python
-
-### Database
-- SQLite
-
-### Image Processing
-- Pillow
-- NumPy
-- Perceptual Hashing (pHash)
+**Backend:** FastAPI · SQLite · OpenCLIP (ViT-B-32) · Pillow · NumPy · PyTorch
+**Frontend:** React 18 · Vite 5 · plain CSS-in-JS (no UI framework)
+**Deployment:** Vercel (frontend) · Render / Fly.io / Railway (backend)
 
 ---
 
-## Project Structure
+## Hybrid Scoring Model
 
-```bash
-truesight-main/
-│
-├── backend/
-│   ├── storage/
-│   ├── app.py
-│   ├── ledger.py
-│   ├── requirements.txt
-│
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.js
-│
-└── README.md
-````
+Every analysis returns three signals plus a final trust score:
 
----
+| Signal | Source | What it captures |
+|--------|--------|------------------|
+| **pHash similarity** | DCT-based perceptual hash | Structural / pixel-level similarity |
+| **CLIP similarity** | OpenCLIP ViT-B-32 image embedding cosine | Semantic / content similarity |
+| **Hybrid score** | `0.55 × pHash + 0.45 × CLIP` | Combined confidence |
+| **Trust score** | Verdict-driven calibration of the hybrid score | Final confidence shown to the user |
 
-## Features
+### Verdict thresholds
 
-### 1. Image Registration
+| Condition | Verdict |
+|-----------|---------|
+| No registrations exist | `not_registered` |
+| `pHash ≥ 0.98` AND `CLIP ≥ 0.98` | `exact_match` |
+| `hybrid ≥ 0.88` OR `pHash ≥ 0.90` | `near_duplicate` |
+| `CLIP ≥ 0.85` | `semantically_similar` |
+| otherwise | `different` |
 
-Users can upload an image and register it in the system.
-The backend stores:
-
-* Content SHA-256
-* pHash
-* Optional label
-* Timestamp
-
-### 2. Image Analysis
-
-Users can upload an image for analysis.
-The system:
-
-* Generates pHash for the uploaded image
-* Compares it with registered images
-* Finds the best pHash match
-* Returns a trust score and verdict
-
-### 3. Tags / Verdicts
-
-The Sprint 1 system returns one of the following result tags:
-
-* `likely_real`
-* `uncertain`
-* `likely_ai_or_manipulated`
-* `not_registered`
-
-### 4. History Tracking
-
-The application stores:
-
-* Registration history
-* Analysis history
-
-### 5. SQLite Storage
-
-All registration and analysis records are stored in a local SQLite database.
+If the optional ML libs (`torch`, `open_clip_torch`) fail to load, the backend transparently falls back to a lightweight RGB embedding so the pipeline keeps working — the response field `embedding_backend` reports which path was used.
 
 ---
 
-## API Endpoints
+## API Surface
 
-### `GET /health`
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/`                      | Service banner + route list |
+| `GET`  | `/health`                | Health + embedding backend + registration count |
+| `POST` | `/register`              | Register an image (SHA-256 + pHash + CLIP embedding) |
+| `POST` | `/analyze`               | Analyze an image and return verdict + similarities |
+| `GET`  | `/history/registrations` | Recent registrations |
+| `GET`  | `/history/analyses`      | Recent analyses |
+| `GET`  | `/docs`                  | Interactive Swagger UI |
 
-Checks whether the backend is running.
+### `/analyze` response shape
 
-### `POST /register`
-
-Registers an uploaded image and stores its SHA-256 and pHash.
-
-### `POST /analyze`
-
-Analyzes an uploaded image using pHash-based verification.
-
-### `GET /history/registrations`
-
-Returns registration history.
-
-### `GET /history/analyses`
-
-Returns analysis history.
+```json
+{
+  "content_sha256": "...",
+  "phash": "...",
+  "embedding_backend": "open_clip_vit_b_32",
+  "best_match": {
+    "content_sha256": "...",
+    "phash_match_sha256": "...",
+    "clip_match_sha256": "...",
+    "phash_similarity": 0.9421,
+    "clip_similarity": 0.8873,
+    "hybrid_score": 0.9175
+  },
+  "result": {
+    "trust": 0.9175,
+    "verdict": "near_duplicate"
+  },
+  "tags": ["near_duplicate", "structural_match"],
+  "note": "Sprint 3 hybrid verification: 0.55 * pHash + 0.45 * CLIP similarity."
+}
+```
 
 ---
 
-## How to Run the Project
+## Local Setup
 
-## Backend Setup
-
-Go to the backend folder:
+### 1. Backend
 
 ```bash
 cd backend
-```
+python -m venv .venv
+# Windows:
+.\.venv\Scripts\Activate.ps1
+# macOS/Linux:
+source .venv/bin/activate
 
-Create a virtual environment:
-
-```bash
-python -m venv venv
-```
-
-Activate it on Windows PowerShell:
-
-```bash
-.\venv\Scripts\Activate
-```
-
-Install dependencies:
-
-```bash
 pip install -r requirements.txt
+python -m uvicorn app:app --reload --port 8000
 ```
 
-Run the backend server:
+The backend will be reachable at:
+- API: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
 
-```bash
-python -m uvicorn app:app --reload
-```
+> The first request after a cold start downloads the OpenCLIP weights (~150 MB) the first time. Subsequent runs use the local cache.
 
-Backend runs at:
+### 2. Frontend
 
-```bash
-http://localhost:8000
-```
-
-OpenAPI docs:
-
-```bash
-http://localhost:8000/docs
-```
-
----
-
-## Frontend Setup
-
-Open a new terminal and go to the frontend folder:
+In a second terminal:
 
 ```bash
 cd frontend
-```
-
-Install dependencies:
-
-```bash
+cp .env.example .env        # optional; default already points to localhost:8000
 npm install
-```
-
-Run the frontend:
-
-```bash
 npm run dev
 ```
 
-Frontend runs at:
-
-```bash
-http://localhost:5173
-```
+Open http://localhost:5173.
 
 ---
 
-## Important Note
+## Smoke Test (5 minutes)
 
-If you previously ran a different version of the backend with a different database schema, delete the old database before starting Sprint 1:
+Run through this checklist before demoing:
 
-```bash
-backend/storage/truesight.db
-```
-
-Then restart the backend so the new Sprint 1 tables are created.
-
----
-
-## Sprint 1 Workflow
-
-The basic application workflow is:
-
-```text
-Upload Image -> Register or Analyze -> Generate pHash -> Compare Against Registered Images -> Return Trust Result -> Store History
-```
+1. **Register the same image** → expect `status: registered`, then `status: already_registered` on a second submit.
+2. **Analyze the same image** → expect `verdict: exact_match`, both similarities ≈ 1.0.
+3. **Analyze a near-duplicate** (e.g. resized or re-saved JPEG of the original) → expect `near_duplicate` with high pHash.
+4. **Analyze a semantically related image** (different photo of the same subject) → expect `semantically_similar` with high CLIP, lower pHash.
+5. **Analyze an unrelated image** → expect `different` with low scores.
+6. **Click History** → both Analyses and Registrations tabs populate.
+7. **Upload an invalid file** (e.g. a `.txt` renamed to `.jpg`) → expect a 400 error and a red error toast in the UI.
 
 ---
 
-## Example Sprint 1 Usage
+## Deployment
 
-### Register an Image
+### Frontend on Vercel
 
-1. Upload an image
-2. Click **Register**
-3. The image is stored with its SHA-256 and pHash
+The repo includes a `vercel.json` at the project root that points Vercel at the `frontend/` workspace.
 
-### Analyze an Image
+1. Push this repo to GitHub.
+2. On https://vercel.com → **Add New Project** → import the GitHub repo.
+3. Leave the framework preset on **Other** (the `vercel.json` controls the build).
+4. In **Environment Variables**, add:
+   - `VITE_API_URL` = the public URL of your deployed backend (see below).
+5. Click **Deploy**. Vercel will run `npm --prefix frontend install && npm --prefix frontend run build` and serve `frontend/dist`.
 
-1. Upload an image
-2. Click **Analyze**
-3. The system compares its pHash with registered images
-4. The result shows:
+Subsequent pushes to `main` redeploy automatically.
 
-   * pHash similarity
-   * trust score
-   * verdict/tag
-   * identifiers
-   * best pHash match
+### Backend — *not* on Vercel
 
----
+The backend cannot run on Vercel's serverless functions because:
+- PyTorch + OpenCLIP weights exceed Vercel's 250 MB function size limit.
+- SQLite + uploaded images need persistent disk; Vercel's filesystem is ephemeral.
+- CLIP cold-start latency is far above Vercel's serverless timeouts.
 
-## Sprint 1 Limitations
+**Recommended host: [Render](https://render.com)** (free tier supports persistent disks, longer cold starts, and Python web services).
 
-This MVP is intentionally limited to Sprint 1 functionality. It does not yet include:
+Quick Render setup:
+1. Create a **Web Service** pointing at this repo.
+2. **Root directory:** `backend`
+3. **Build command:** `pip install -r requirements.txt`
+4. **Start command:** `python -m uvicorn app:app --host 0.0.0.0 --port $PORT`
+5. **Environment variables:**
+   - `FRONTEND_ORIGINS` = your Vercel URL(s), comma-separated (e.g. `https://truesight.vercel.app,https://truesight-main.vercel.app`)
+6. (Optional) attach a persistent disk mounted at `backend/storage` so the SQLite DB survives redeploys.
 
-* CLIP-based similarity matching
-* Provenance ledger verification
-* Merkle root validation
-* Advanced trust score explanation
-* CSV export features
-* Full forensic reporting
+Once Render gives you a URL like `https://truesight-api.onrender.com`, paste it into Vercel's `VITE_API_URL` env var and redeploy the frontend.
 
-These features are planned for later sprints.
-
----
-
-## Team Goal for Sprint 1
-
-The goal of Sprint 1 was to deliver a **working MVP** that demonstrates the core concept of TrueSight:
-
-* registering images,
-* verifying uploaded images using pHash,
-* showing a basic trust result,
-* and storing analysis history.
+Fly.io and Railway also work; the build/start commands above are portable.
 
 ---
 
-## Future Work
+## Environment Variables
 
-Planned improvements for upcoming sprints include:
+| Where | Name | Purpose |
+|-------|------|---------|
+| Frontend | `VITE_API_URL` | Base URL of the backend API (build-time) |
+| Backend  | `FRONTEND_ORIGINS` | Extra CORS origins, comma-separated |
 
-* CLIP-based neural similarity matching
-* Improved trust scoring logic
-* Better UI for verification results
-* Provenance and audit trail features
-* Expanded backend testing
-* Final deployment and polish
+`localhost:5173` and `127.0.0.1:5173` are always allowed in CORS for local dev — no env var needed for that case.
+
+No secrets are ever required by the application code. Do not commit `.env` files; only `.env.example` is tracked.
 
 ---
 
 ## Authors
 
-TrueSight Capstone Team
-CS 691 Computer Science Capstone Project
+TrueSight Capstone Team — CS 691 Computer Science Capstone Project.

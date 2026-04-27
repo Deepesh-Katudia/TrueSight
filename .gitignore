@@ -1,18 +1,36 @@
 # Python
-backend/.venv
-__pycache__/
+.venv/
+backend/.venv/
+venv/
+backend/venv/
+**/__pycache__/
 *.pyc
+*.pyo
 
 # Node
-frontend/node_modules
-frontend/dist
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
 
-# Mac
+# Mac / OS
 .DS_Store
+Thumbs.db
 
 # Database
+*.db
 backend/truesight.db
+backend/storage/truesight.db
 
-# Env
+# Env files (allow .env.example)
 .env
+.env.*
+!.env.example
+!**/.env.example
 
+# Editor
+.vscode/
+.idea/
+
+# Claude Code local artifacts
+.claude/
