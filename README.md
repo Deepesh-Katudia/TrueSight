@@ -48,7 +48,7 @@ The backend is intentionally split from the frontend so each can be deployed ind
 
 **Backend:** FastAPI · SQLite · OpenCLIP (ViT-B-32) · Pillow · NumPy · PyTorch
 **Frontend:** React 18 · Vite 5 · plain CSS-in-JS (no UI framework)
-**Deployment:** Vercel (frontend) · Render / Fly.io / Railway (backend)
+**Deployment:** Vercel (frontend) · Render Free Web Service (backend)
 
 ---
 
@@ -166,7 +166,72 @@ Run through this checklist before demoing:
 
 ---
 
-## Deployment
+## Deployment Architecture
+
+TrueSight is deployed as two connected services:
+
+| Layer | Host | Project path | Live URL / setting |
+|-------|------|--------------|--------------------|
+| Frontend SPA | Vercel | `frontend/` | `https://frontend-lac-eight-77.vercel.app` |
+| Backend API | Render Free Web Service | `backend/` | Render assigns `https://<service-name>.onrender.com` after Blueprint deploy |
+
+The frontend talks to the backend through `VITE_API_URL`, which is baked into the Vite build. The backend allows the deployed Vercel domains through `FRONTEND_ORIGINS`.
+
+### Current Production Frontend
+
+The `frontend/` workspace is linked to the Vercel project `frontend`.
+
+```text
+https://frontend-lac-eight-77.vercel.app
+```
+
+Vercel settings:
+
+| Setting | Value |
+|---------|-------|
+| Root Directory | `frontend` |
+| Framework | Vite |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Environment Variable | `VITE_API_URL=https://<render-backend-url>` |
+
+After the Render backend is live, set `VITE_API_URL` in Vercel to the Render backend URL and redeploy the frontend.
+
+### Backend on Render
+
+The root [`render.yaml`](./render.yaml) defines the backend as a Render Blueprint service:
+
+| Setting | Value |
+|---------|-------|
+| Service name | `truesight-backend` |
+| Runtime | Python |
+| Plan | Free |
+| Root Directory | `backend` |
+| Build Command | `pip install --upgrade pip && pip install -r requirements.txt` |
+| Start Command | `python -m uvicorn app:app --host 0.0.0.0 --port $PORT` |
+| Health Check | `/health` |
+| Auto Deploy | Every commit to the connected branch |
+
+Deploy it from Render:
+
+1. Push this repository to GitHub.
+2. In Render, choose **New** -> **Blueprint**.
+3. Connect `Deepesh-Katudia/TrueSight`.
+4. Select the `main` branch and the root `render.yaml`.
+5. Click **Deploy Blueprint**.
+6. When Render gives the backend URL, open `<backend-url>/health` to verify it is running.
+7. Add that backend URL to Vercel as `VITE_API_URL`, then redeploy the Vercel frontend.
+
+Render Free Web Service notes:
+
+- Free services spin down after idle time, so the first request after inactivity can be slow.
+- Free services use ephemeral disk. Uploaded files and the SQLite database can be lost on restart, redeploy, or spin-down.
+- For durable demo data, upgrade the backend to a paid Render instance with a persistent disk, or migrate storage to Postgres/object storage.
+- The first CLIP-backed request may be slow because OpenCLIP weights are loaded on cold start. If OpenCLIP cannot initialize, the backend falls back to the lightweight RGB embedding path and reports that in `embedding_backend`.
+
+### Legacy Setup Notes
+
+The section below is retained as historical context. Use the `Deployment Architecture` section above for the current Vercel + Render deployment.
 
 ### Frontend on Vercel
 
@@ -191,7 +256,7 @@ The backend cannot run on Vercel's serverless functions because:
 - SQLite + uploaded images need persistent disk; Vercel's filesystem is ephemeral.
 - CLIP cold-start latency is far above Vercel's serverless timeouts.
 
-**Recommended host: [Render](https://render.com)** (free tier supports persistent disks, longer cold starts, and Python web services).
+**Recommended host: [Render](https://render.com)** (free tier supports Python web services, but not persistent disks).
 
 Quick Render setup:
 1. Create a **Web Service** pointing at this repo.
@@ -200,7 +265,7 @@ Quick Render setup:
 4. **Start command:** `python -m uvicorn app:app --host 0.0.0.0 --port $PORT`
 5. **Environment variables:**
    - `FRONTEND_ORIGINS` = your Vercel URL(s), comma-separated (e.g. `https://truesight.vercel.app,https://truesight-main.vercel.app`)
-6. (Optional) attach a persistent disk mounted at `backend/storage` so the SQLite DB survives redeploys.
+6. For persistent SQLite/uploads, upgrade to a paid Render instance and attach a persistent disk mounted at `backend/storage`.
 
 Once Render gives you a URL like `https://truesight-api.onrender.com`, paste it into Vercel's `VITE_API_URL` env var and redeploy the frontend.
 
@@ -214,6 +279,12 @@ Fly.io and Railway also work; the build/start commands above are portable.
 |-------|------|---------|
 | Frontend | `VITE_API_URL` | Base URL of the backend API (build-time) |
 | Backend  | `FRONTEND_ORIGINS` | Extra CORS origins, comma-separated |
+
+Current backend CORS origins in `render.yaml`:
+
+```text
+https://frontend-lac-eight-77.vercel.app,https://frontend-codewithdeepesh29s-projects.vercel.app,https://frontend-codewithdeepesh29-codewithdeepesh29s-projects.vercel.app
+```
 
 `localhost:5173` and `127.0.0.1:5173` are always allowed in CORS for local dev — no env var needed for that case.
 
