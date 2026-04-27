@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const API = "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 function clamp01(x) {
   const n = Number(x);
@@ -438,7 +438,7 @@ export default function App() {
         pushToast({
           tone: "good",
           title: path === "/register" ? "Registered" : "Analyzed",
-          msg: "Sprint 2 result updated",
+          msg: "Sprint 3 result updated",
         });
 
         if (historyOpen) {
@@ -521,7 +521,7 @@ export default function App() {
           <div>
             <h1 style={{ margin: 0, fontSize: 44, letterSpacing: "-0.03em" }}>TrueSight</h1>
             <div style={{ marginTop: 6, opacity: 0.75 }}>
-              Sprint 2 MVP • Hybrid Image Verification • <b>pHash + CLIP + History</b>
+              Sprint 3 — Final Sprint • Hybrid Image Verification • <b>pHash + CLIP + History</b>
             </div>
           </div>
 
@@ -754,13 +754,13 @@ export default function App() {
                 <ProgressRow
                   label="Hybrid score"
                   value={metrics.hybridScore}
-                  sublabel="Combined Sprint 2 score using pHash and CLIP."
+                  sublabel="0.55 × pHash + 0.45 × CLIP — combined structural and semantic similarity."
                 />
 
                 <ProgressRow
                   label="Trust score"
                   value={metrics.trust}
-                  sublabel="Final Sprint 2 verification confidence."
+                  sublabel="Final Sprint 3 verification confidence."
                 />
 
                 <div style={{ marginTop: 18, fontWeight: 900, marginBottom: 10 }}>
