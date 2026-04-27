@@ -173,7 +173,7 @@ TrueSight is deployed as two connected services:
 | Layer | Host | Project path | Live URL / setting |
 |-------|------|--------------|--------------------|
 | Frontend SPA | Vercel | `frontend/` | `https://frontend-lac-eight-77.vercel.app` |
-| Backend API | Render Free Web Service | `backend/` | Render assigns `https://<service-name>.onrender.com` after Blueprint deploy |
+| Backend API | Render Free Web Service | `backend/` | `https://truesight-backend-lw79.onrender.com` |
 
 The frontend talks to the backend through `VITE_API_URL`, which is baked into the Vite build. The backend allows the deployed Vercel domains through `FRONTEND_ORIGINS`.
 
@@ -193,9 +193,9 @@ Vercel settings:
 | Framework | Vite |
 | Build Command | `npm run build` |
 | Output Directory | `dist` |
-| Environment Variable | `VITE_API_URL=https://<render-backend-url>` |
+| Environment Variable | `VITE_API_URL=https://truesight-backend-lw79.onrender.com` |
 
-After the Render backend is live, set `VITE_API_URL` in Vercel to the Render backend URL and redeploy the frontend.
+The current production deployment is `dpl_Fz47BCq9CFZF4BxUacAPUxLwjQUm`, aliased to the URL above.
 
 ### Backend on Render
 
@@ -219,8 +219,8 @@ Deploy it from Render:
 3. Connect `Deepesh-Katudia/TrueSight`.
 4. Select the `main` branch and the root `render.yaml`.
 5. Click **Deploy Blueprint**.
-6. When Render gives the backend URL, open `<backend-url>/health` to verify it is running.
-7. Add that backend URL to Vercel as `VITE_API_URL`, then redeploy the Vercel frontend.
+6. Open `https://truesight-backend-lw79.onrender.com/health` to verify it is running.
+7. Keep `VITE_API_URL` in Vercel pointed at `https://truesight-backend-lw79.onrender.com`, then redeploy the Vercel frontend after backend URL changes.
 
 Render Free Web Service notes:
 
